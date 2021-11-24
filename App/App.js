@@ -488,6 +488,8 @@ import {
   StatusBar,
   TouchableOpacity,
   Dimensions,
+  TextInput,
+  Platform
 } from 'react-native';
 
 import {
@@ -501,10 +503,13 @@ import {
   registerGlobals,
 } from 'react-native-webrtc';
 
-import io from 'socket.io-client';
+import io from 'socket.io-client/dist/socket.io.js';
+// import RecordRTC, { RecordRTCPromisesHandler } from 'recordrtc'
+// import { Audio, Video } from 'react-native-media-recorder';
+
 
 const dimensions = Dimensions.get('window');
-
+const baseUrl = Platform.OS === 'android' ? 'http://192.168.1.6' : 'http://localhost';
 class App extends React.Component {
   constructor(props) {
     super(props);
@@ -512,6 +517,11 @@ class App extends React.Component {
     this.state = {
       localStream: null,
       remoteStream: null,
+
+      //ID:
+      your_id: "",
+      id_to_call: "",
+      answer_id: "",
     };
 
     this.sdp;
@@ -520,25 +530,30 @@ class App extends React.Component {
   }
 
   componentDidMount = () => {
-    this.socket = io.connect(
-      'https://c992-2001-ee0-450f-fe60-24ae-92d6-a611-65ea.ngrok.io/webrtcPeer',
+    //3000
+    this.socket = io(
+      // 'https://9ba3-2001-ee0-450f-fe60-6988-665-39-b829.ngrok.io/webrtcPeer',
+      `${baseUrl}:8080/webrtcPeer`,
       {
         path: '/webrtc',
         query: {},
       },
     );
+
     // this.socket = io('/webrtcPeer', {
     //   path: '/webrtc',
     //   query: {},
     // });
 
     this.socket.on('connection-success', success => {
-      console.log(success);
+      console.log("SUCCESS", success.success)
+      this.setState({ your_id: success.success });
     });
 
-    this.socket.on('offerOrAnswer', sdp => {
+    this.socket.on('offerOrAnswer', (sdp, id) => {
       this.sdp = JSON.stringify(sdp);
-
+      console.log("ID",id);
+      this.setState({ answer_id: id });
       // set sdp as remote description
       this.pc.setRemoteDescription(new RTCSessionDescription(sdp));
     });
@@ -574,7 +589,12 @@ class App extends React.Component {
       // see addCandidate below to be triggered on the remote peer
       if (e.candidate) {
         // console.log(JSON.stringify(e.candidate))
-        this.sendToPeer('candidate', e.candidate);
+        this.sendToPeer(
+          'candidate',
+          e.candidate,
+          this.state.answer_id,
+          this.state.your_id
+        );
       }
     };
 
@@ -591,7 +611,7 @@ class App extends React.Component {
     };
 
     const success = stream => {
-      console.log(stream.toURL());
+      console.log("STREAM.URL ",stream.toURL());
       this.setState({
         localStream: stream,
       });
@@ -632,26 +652,37 @@ class App extends React.Component {
       mediaDevices.getUserMedia(constraints).then(success).catch(failure);
     });
   };
-  sendToPeer = (messageType, payload) => {
+  sendToPeer = (messageType, payload, idtocal, yourid) => {
     this.socket.emit(messageType, {
       socketID: this.socket.id,
       payload,
+      idtocal,
+      yourid,
     });
   };
 
   createOffer = () => {
-    console.log('Offer');
+    console.log('Offer', this.state.id_to_call);
 
     // https://developer.mozilla.org/en-US/docs/Web/API/RTCPeerConnection/createOffer
     // initiates the creation of SDP
-    this.pc.createOffer({ offerToReceiveVideo: 1 }).then(sdp => {
-      // console.log(JSON.stringify(sdp))
+    if (this.state.id_to_call) {
+      this.pc.createOffer({ offerToReceiveVideo: 1 }).then(sdp => {
+        // console.log(JSON.stringify(sdp))
 
-      // set offer sdp as local description
-      this.pc.setLocalDescription(sdp);
+        // set offer sdp as local description
+        this.pc.setLocalDescription(sdp);
 
-      this.sendToPeer('offerOrAnswer', sdp);
-    });
+        this.sendToPeer(
+          'offerOrAnswer',
+          sdp,
+          this.state.id_to_call,
+          this.state.your_id
+        );
+      },
+        (e) => { }
+      );
+    }
   };
 
   createAnswer = () => {
@@ -662,9 +693,31 @@ class App extends React.Component {
       // set answer sdp as local description
       this.pc.setLocalDescription(sdp);
 
-      this.sendToPeer('offerOrAnswer', sdp);
+      this.sendToPeer(
+        'offerOrAnswer',
+        sdp,
+        this.state.answer_id,
+        this.state.your_id
+      );
     });
   };
+
+  recordVideo = async () => {
+    console.log("Recording")
+    // //Recording
+    // let recorder = new RecordRTCPromisesHandler(stream, {
+    //   type: 'video'
+    // });
+    // recorder.startRecording();
+
+    // const sleep = m => new Promise(r => setTimeout(r, m));
+    // await sleep(2000);
+
+    // await recorder.stopRecording();
+    // let blob = await recorder.getBlob();
+    // console.log("BLOB ", blob)
+    // RecordRTC.invokeSaveAsDialog(blob);
+  }
 
   setRemoteDescription = () => {
     // retrieve and parse the SDP copied from the remote peer
@@ -713,6 +766,15 @@ class App extends React.Component {
     return (
       <SafeAreaView style={{ flex: 1 }}>
         <StatusBar backgroundColor="blue" barStyle={'dark-content'} />
+        <View style={{}}>
+          <Text>Your ID: {this.state.your_id}</Text>
+          <TextInput
+            style={styles.input}
+            onChangeText={(e) => this.setState({ id_to_call: e })}
+            // value={text}
+            placeholder={"Input Remote ID"}
+          />
+        </View>
         <View style={{ ...styles.buttonsContainer }}>
           <View style={{ flex: 1 }}>
             <TouchableOpacity onPress={this.createOffer}>
@@ -728,8 +790,15 @@ class App extends React.Component {
               </View>
             </TouchableOpacity>
           </View>
+          {/* <View style={{ flex: 1 }}>
+            <TouchableOpacity onPress={this.recordVideo}>
+              <View style={styles.button}>
+                <Text style={{ ...styles.textContent }}>Record</Text>
+              </View>
+            </TouchableOpacity>
+          </View> */}
         </View>
-        <View style={{ ...styles.videosContainer, backgroundColor:'white' }}>
+        <View style={{ ...styles.videosContainer, backgroundColor: 'white' }}>
           <View
             style={{
               position: 'absolute',
@@ -808,6 +877,12 @@ const styles = StyleSheet.create({
     width: dimensions.width - 30,
     height: 200, //dimensions.height / 2,
     backgroundColor: 'black',
+  },
+  input: {
+    height: 40,
+    margin: 12,
+    borderWidth: 1,
+    padding: 10,
   },
 });
 
