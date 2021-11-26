@@ -489,7 +489,8 @@ import {
   TouchableOpacity,
   Dimensions,
   TextInput,
-  Platform
+  Platform,
+  FlatList
 } from 'react-native';
 
 import {
@@ -526,13 +527,17 @@ class App extends React.Component {
       answer_id: "",
 
       //Record:
-      urlVideoRecord: null,
+      isRecordVideo: false,
+
+      //List ID:
+      listID: [],
     };
 
     //SOCKET:
     this.sdp;
     this.socket = null;
     this.candidates = [];
+    this.lstID = [];
   }
 
   componentDidMount = () => {
@@ -550,7 +555,11 @@ class App extends React.Component {
     );
 
     this.socket.on('connection-success', success => {
-      // console.log("#connection-success ", success.success)
+      console.log("#connection-success ", success.success)
+      this.lstID.push(success.success);
+      this.setState(prevState => ({
+        listID: [...prevState.listID, success.success]
+      }))
       this.setState({ my_id: success.success });
     });
 
@@ -708,25 +717,28 @@ class App extends React.Component {
 
   recordVideo = async () => {
     console.log("#Record Video");
+    this.setState({ isRecordVideo: true })
     RecordScreen.startRecording().catch((error) => console.error(error));
   }
 
   stopRecord = async () => {
-    console.log("#Stop Record Video");
-    const res = await RecordScreen.stopRecording().catch((error) =>
-      console.warn(error)
-    );
-    if (res) {
-      const url = res.result.outputURL;
-      this.saveRecordScreen(url)
+    if (this.state.isRecordVideo) {
+      const res = await RecordScreen.stopRecording().catch((error) =>
+        console.warn(error)
+      );
+      if (res) {
+        const url = res.result.outputURL;
+        this.saveRecordScreen(url)
+      }
     }
   }
-  
+
   saveRecordScreen = async (videoUrl) => {
     console.log("#Save Record Video");
     try {
       await CameraRoll.save(videoUrl, { type: 'video' })
       console.log("Saved video")
+      alert("Video saved to storage")
     } catch (error) {
       console.log("Error when save video: ", error)
     }
@@ -794,6 +806,19 @@ class App extends React.Component {
     )
   }
 
+  Item = ({ title }) => (
+    <View style={styles.item}>
+      <Text style={styles.title}>{title}</Text>
+    </View>
+  );
+
+  renderItem = ({ item }) => (
+    // <Item title={item.title} />
+    <View style={styles.item}>
+      <Text style={styles.title}>{item}</Text>
+    </View>
+  );
+
   render() {
     const { localStream, remoteStream } = this.state;
     const localVideo = localStream && (this.renderRTCView(localStream, 'Local Stream', true))
@@ -808,6 +833,15 @@ class App extends React.Component {
             onChangeText={(e) => this.setState({ id_to_call: e })}
             placeholder={"Input Remote ID"}
           />
+        </View>
+
+        <View style={{ margin: 10, backgroundColor: 'green', height: 50 }}>
+          <FlatList
+            data={this.state.listID}
+            renderItem={this.renderItem}
+            keyExtractor={item => item.id}
+          />
+
         </View>
 
         <View style={{ ...styles.buttonsContainer }}>
