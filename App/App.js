@@ -504,12 +504,13 @@ import {
 } from 'react-native-webrtc';
 
 import io from 'socket.io-client/dist/socket.io.js';
-// import RecordRTC, { RecordRTCPromisesHandler } from 'recordrtc'
-// import { Audio, Video } from 'react-native-media-recorder';
-
+import RecordScreen from 'react-native-record-screen';
+import CameraRoll from "@react-native-community/cameraroll";
 
 const dimensions = Dimensions.get('window');
-const baseUrl = Platform.OS === 'android' ? 'http://192.168.1.6' : 'http://localhost';
+// const baseUrl = Platform.OS === 'android' ? 'http://192.168.1.6:8080' : 'http://localhost:8080';
+const baseUrl = Platform.OS === 'android' ? 'https://44fd-2001-ee0-450f-fe60-a0a8-186d-6838-da62.ngrok.io' : 'http://localhost';
+
 class App extends React.Component {
   constructor(props) {
     super(props);
@@ -522,6 +523,10 @@ class App extends React.Component {
       your_id: "",
       id_to_call: "",
       answer_id: "",
+
+      //Record:
+      urlVideoRecord: null,
+      isRecord: false
     };
 
     this.sdp;
@@ -533,7 +538,7 @@ class App extends React.Component {
     //3000
     this.socket = io(
       // 'https://9ba3-2001-ee0-450f-fe60-6988-665-39-b829.ngrok.io/webrtcPeer',
-      `${baseUrl}:8080/webrtcPeer`,
+      `${baseUrl}/webrtcPeer`,
       {
         path: '/webrtc',
         query: {},
@@ -552,7 +557,7 @@ class App extends React.Component {
 
     this.socket.on('offerOrAnswer', (sdp, id) => {
       this.sdp = JSON.stringify(sdp);
-      console.log("ID",id);
+      console.log("ID", id);
       this.setState({ answer_id: id });
       // set sdp as remote description
       this.pc.setRemoteDescription(new RTCSessionDescription(sdp));
@@ -611,13 +616,13 @@ class App extends React.Component {
     };
 
     const success = stream => {
-      console.log("STREAM.URL ",stream.toURL());
+      console.log("STREAM.URL ", stream.toURL());
       this.setState({
         localStream: stream,
       });
       this.pc.addStream(stream);
     };
-
+ 
     const failure = e => {
       console.log('getUserMedia Error: ', e);
     };
@@ -652,6 +657,7 @@ class App extends React.Component {
       mediaDevices.getUserMedia(constraints).then(success).catch(failure);
     });
   };
+
   sendToPeer = (messageType, payload, idtocal, yourid) => {
     this.socket.emit(messageType, {
       socketID: this.socket.id,
@@ -704,19 +710,28 @@ class App extends React.Component {
 
   recordVideo = async () => {
     console.log("Recording")
-    // //Recording
-    // let recorder = new RecordRTCPromisesHandler(stream, {
-    //   type: 'video'
-    // });
-    // recorder.startRecording();
-
-    // const sleep = m => new Promise(r => setTimeout(r, m));
-    // await sleep(2000);
-
-    // await recorder.stopRecording();
-    // let blob = await recorder.getBlob();
-    // console.log("BLOB ", blob)
-    // RecordRTC.invokeSaveAsDialog(blob);
+    this.setState({ isRecord: !this.state.isRecord })
+    RecordScreen.startRecording().catch((error) => console.error(error));
+  }
+  stopRecord = async () => {
+    this.setState({ isRecord: !this.state.isRecord })
+    const res = await RecordScreen.stopRecording().catch((error) =>
+      console.warn(error)
+    );
+    if (res) {
+      const url = res.result.outputURL;
+      // console.log("URI ", uri)
+      // this.setState({ urlVideoRecord: url });
+      this.saveRecordScreen(url)
+    }
+  }
+  saveRecordScreen = async(videoUrl) => {
+    try {
+      await CameraRoll.save(videoUrl, {type:'video'})
+      console.log("Saved video")
+    } catch (error) {
+      console.log("Error when save video" , error)
+    }
   }
 
   setRemoteDescription = () => {
@@ -790,13 +805,29 @@ class App extends React.Component {
               </View>
             </TouchableOpacity>
           </View>
-          {/* <View style={{ flex: 1 }}>
+          <View style={{ flex: 1 }}>
             <TouchableOpacity onPress={this.recordVideo}>
               <View style={styles.button}>
                 <Text style={{ ...styles.textContent }}>Record</Text>
               </View>
             </TouchableOpacity>
-          </View> */}
+          </View>
+          <View style={{ flex: 1 }}>
+            <TouchableOpacity onPress={this.stopRecord}>
+              <View style={styles.button}>
+                <Text style={{ ...styles.textContent }}>Stop</Text>
+              </View>
+            </TouchableOpacity>
+          </View>
+        </View>
+        <View style={{ alignItems:'center'}}>
+          {this.state.urlVideoRecord &&  <RTCView
+          key={2}
+          mirror={true}
+          style={{ ...styles.rtcViewRemote }}
+          objectFit="contain"
+          streamURL={this.state.urlVideoRecord}
+        />}
         </View>
         <View style={{ ...styles.videosContainer, backgroundColor: 'white' }}>
           <View
