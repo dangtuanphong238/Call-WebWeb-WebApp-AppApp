@@ -508,36 +508,40 @@ import RecordScreen from 'react-native-record-screen';
 import CameraRoll from "@react-native-community/cameraroll";
 
 const dimensions = Dimensions.get('window');
-// const baseUrl = Platform.OS === 'android' ? 'http://192.168.1.6:8080' : 'http://localhost:8080';
-const baseUrl = Platform.OS === 'android' ? 'https://44fd-2001-ee0-450f-fe60-a0a8-186d-6838-da62.ngrok.io' : 'http://localhost';
+const baseUrl = Platform.OS === 'android' ? 'http://192.168.1.6:8080' : 'http://localhost:8080';
+// const baseUrl = Platform.OS === 'android' ? 'https://44fd-2001-ee0-450f-fe60-a0a8-186d-6838-da62.ngrok.io' : 'http://localhost';
 
 class App extends React.Component {
   constructor(props) {
     super(props);
 
     this.state = {
+      //STREAM:
       localStream: null,
       remoteStream: null,
 
       //ID:
-      your_id: "",
+      my_id: "",
       id_to_call: "",
       answer_id: "",
 
       //Record:
       urlVideoRecord: null,
-      isRecord: false
     };
 
+    //SOCKET:
     this.sdp;
     this.socket = null;
     this.candidates = [];
   }
 
   componentDidMount = () => {
-    //3000
+    this.socketConnect()
+  };
+
+  socketConnect = () => {
+    /* SOCKET CONNECTION */
     this.socket = io(
-      // 'https://9ba3-2001-ee0-450f-fe60-6988-665-39-b829.ngrok.io/webrtcPeer',
       `${baseUrl}/webrtcPeer`,
       {
         path: '/webrtc',
@@ -545,30 +549,25 @@ class App extends React.Component {
       },
     );
 
-    // this.socket = io('/webrtcPeer', {
-    //   path: '/webrtc',
-    //   query: {},
-    // });
-
     this.socket.on('connection-success', success => {
-      console.log("SUCCESS", success.success)
-      this.setState({ your_id: success.success });
+      // console.log("#connection-success ", success.success)
+      this.setState({ my_id: success.success });
     });
 
     this.socket.on('offerOrAnswer', (sdp, id) => {
+      // console.log("#offerOrAnswer ", `[sdp: ${sdp}, id: ${id}]`);
       this.sdp = JSON.stringify(sdp);
-      console.log("ID", id);
       this.setState({ answer_id: id });
       // set sdp as remote description
       this.pc.setRemoteDescription(new RTCSessionDescription(sdp));
     });
 
     this.socket.on('candidate', candidate => {
-      // console.log('From Peer... ', JSON.stringify(candidate))
-      // this.candidates = [...this.candidates, candidate]
+      // console.log("#candidate ", candidate);
       this.pc.addIceCandidate(new RTCIceCandidate(candidate));
     });
 
+    /*PEER CONNECTION */
     const pc_config = {
       iceServers: [
         // {
@@ -593,12 +592,11 @@ class App extends React.Component {
       // send the candidates to the remote peer
       // see addCandidate below to be triggered on the remote peer
       if (e.candidate) {
-        // console.log(JSON.stringify(e.candidate))
         this.sendToPeer(
           'candidate',
           e.candidate,
           this.state.answer_id,
-          this.state.your_id
+          this.state.my_id
         );
       }
     };
@@ -609,27 +607,27 @@ class App extends React.Component {
     };
 
     this.pc.onaddstream = e => {
-      // this.remoteVideoref.current.srcObject = e.streams[0]
       this.setState({
         remoteStream: e.stream,
       });
     };
 
     const success = stream => {
-      console.log("STREAM.URL ", stream.toURL());
+      // console.log("#getUserMedia Success: ", stream);
       this.setState({
         localStream: stream,
       });
       this.pc.addStream(stream);
     };
- 
-    const failure = e => {
-      console.log('getUserMedia Error: ', e);
+
+    const failure = error => {
+      console.log('#getUserMedia Error: ', error);
     };
 
+    /* MEDIA */
     let isFront = true;
     mediaDevices.enumerateDevices().then(sourceInfos => {
-      console.log(sourceInfos);
+      // console.log("#SourceInfos: ", sourceInfos);
       let videoSourceId;
       for (let i = 0; i < sourceInfos.length; i++) {
         const sourceInfo = sourceInfos[i];
@@ -656,9 +654,10 @@ class App extends React.Component {
 
       mediaDevices.getUserMedia(constraints).then(success).catch(failure);
     });
-  };
+  }
 
   sendToPeer = (messageType, payload, idtocal, yourid) => {
+    // console.log("#Send To Peer")
     this.socket.emit(messageType, {
       socketID: this.socket.id,
       payload,
@@ -668,8 +667,7 @@ class App extends React.Component {
   };
 
   createOffer = () => {
-    console.log('Offer', this.state.id_to_call);
-
+    console.log('#Create Offer', this.state.id_to_call);
     // https://developer.mozilla.org/en-US/docs/Web/API/RTCPeerConnection/createOffer
     // initiates the creation of SDP
     if (this.state.id_to_call) {
@@ -683,7 +681,7 @@ class App extends React.Component {
           'offerOrAnswer',
           sdp,
           this.state.id_to_call,
-          this.state.your_id
+          this.state.my_id
         );
       },
         (e) => { }
@@ -703,34 +701,34 @@ class App extends React.Component {
         'offerOrAnswer',
         sdp,
         this.state.answer_id,
-        this.state.your_id
+        this.state.my_id
       );
     });
   };
 
   recordVideo = async () => {
-    console.log("Recording")
-    this.setState({ isRecord: !this.state.isRecord })
+    console.log("#Record Video");
     RecordScreen.startRecording().catch((error) => console.error(error));
   }
+
   stopRecord = async () => {
-    this.setState({ isRecord: !this.state.isRecord })
+    console.log("#Stop Record Video");
     const res = await RecordScreen.stopRecording().catch((error) =>
       console.warn(error)
     );
     if (res) {
       const url = res.result.outputURL;
-      // console.log("URI ", uri)
-      // this.setState({ urlVideoRecord: url });
       this.saveRecordScreen(url)
     }
   }
-  saveRecordScreen = async(videoUrl) => {
+  
+  saveRecordScreen = async (videoUrl) => {
+    console.log("#Save Record Video");
     try {
-      await CameraRoll.save(videoUrl, {type:'video'})
+      await CameraRoll.save(videoUrl, { type: 'video' })
       console.log("Saved video")
     } catch (error) {
-      console.log("Error when save video" , error)
+      console.log("Error when save video: ", error)
     }
   }
 
@@ -744,9 +742,6 @@ class App extends React.Component {
 
   addCandidate = () => {
     // retrieve and parse the Candidate copied from the remote peer
-    // const candidate = JSON.parse(this.textref.value)
-    // console.log('Adding candidate:', candidate)
-
     // add the candidate to the peer connection
     // this.pc.addIceCandidate(new RTCIceCandidate(candidate))
 
@@ -756,116 +751,76 @@ class App extends React.Component {
     });
   };
 
+  renderButton = (onPress, text) => {
+    return (
+      <View style={{ flex: 1 }}>
+        <TouchableOpacity onPress={onPress}>
+          <View style={styles.button}>
+            <Text style={{ ...styles.textContent }}>{text}</Text>
+          </View>
+        </TouchableOpacity>
+      </View>
+    )
+  }
+
+  renderRTCView = (stream, text, switchCamera) => {
+    const { localStream } = this.state
+    return (
+      <View>
+        {switchCamera ?
+          <TouchableOpacity
+            onPress={() => localStream._tracks[1]._switchCamera()}
+            style={{ flex: 1, backgroundColor: 'white', marginBottom: 10, alignItems: 'center' }}>
+            <Text style={{ textAlign: 'center', fontWeight: 'bold' }}>{text}</Text>
+            <RTCView
+              key={2}
+              mirror={true}
+              style={{ ...styles.rtcViewRemote }}
+              objectFit="contain"
+              streamURL={stream && stream.toURL()}
+            />
+          </TouchableOpacity> :
+          <View style={{ flex: 1, backgroundColor: 'white', marginBottom: 10, alignItems: 'center' }}>
+            <Text style={{ textAlign: 'center', fontWeight: 'bold' }}>{text}</Text>
+            <RTCView
+              key={2}
+              mirror={true}
+              style={{ ...styles.rtcViewRemote }}
+              objectFit="contain"
+              streamURL={stream && stream.toURL()}
+            />
+          </View>}
+      </View>
+    )
+  }
+
   render() {
     const { localStream, remoteStream } = this.state;
-
-    const remoteVideo = remoteStream ? (
-      <>
-        <Text>Remote Stream</Text>
-        <RTCView
-          key={2}
-          mirror={true}
-          style={{ ...styles.rtcViewRemote }}
-          objectFit="contain"
-          streamURL={remoteStream && remoteStream.toURL()}
-        />
-      </>
-    ) : (
-      <View style={{ padding: 15 }}>
-        <Text style={{ fontSize: 22, textAlign: 'center', color: 'white' }}>
-          Waiting for Peer connection ...
-        </Text>
-      </View>
-    );
+    const localVideo = localStream && (this.renderRTCView(localStream, 'Local Stream', true))
+    const remoteVideo = remoteStream && (this.renderRTCView(remoteStream, 'Remote Stream', false))
 
     return (
       <SafeAreaView style={{ flex: 1 }}>
-        <StatusBar backgroundColor="blue" barStyle={'dark-content'} />
-        <View style={{}}>
-          <Text>Your ID: {this.state.your_id}</Text>
+        <View style={{ margin: 10 }}>
+          <Text>My ID: {this.state.my_id}</Text>
           <TextInput
             style={styles.input}
             onChangeText={(e) => this.setState({ id_to_call: e })}
-            // value={text}
             placeholder={"Input Remote ID"}
           />
         </View>
+
         <View style={{ ...styles.buttonsContainer }}>
-          <View style={{ flex: 1 }}>
-            <TouchableOpacity onPress={this.createOffer}>
-              <View style={styles.button}>
-                <Text style={{ ...styles.textContent }}>Call</Text>
-              </View>
-            </TouchableOpacity>
-          </View>
-          <View style={{ flex: 1 }}>
-            <TouchableOpacity onPress={this.createAnswer}>
-              <View style={styles.button}>
-                <Text style={{ ...styles.textContent }}>Answer</Text>
-              </View>
-            </TouchableOpacity>
-          </View>
-          <View style={{ flex: 1 }}>
-            <TouchableOpacity onPress={this.recordVideo}>
-              <View style={styles.button}>
-                <Text style={{ ...styles.textContent }}>Record</Text>
-              </View>
-            </TouchableOpacity>
-          </View>
-          <View style={{ flex: 1 }}>
-            <TouchableOpacity onPress={this.stopRecord}>
-              <View style={styles.button}>
-                <Text style={{ ...styles.textContent }}>Stop</Text>
-              </View>
-            </TouchableOpacity>
-          </View>
+          {this.renderButton(this.createOffer, 'Call')}
+          {this.renderButton(this.createAnswer, 'Answer')}
+          {this.renderButton(this.recordVideo, 'Record')}
+          {this.renderButton(this.stopRecord, 'Stop')}
         </View>
-        <View style={{ alignItems:'center'}}>
-          {this.state.urlVideoRecord &&  <RTCView
-          key={2}
-          mirror={true}
-          style={{ ...styles.rtcViewRemote }}
-          objectFit="contain"
-          streamURL={this.state.urlVideoRecord}
-        />}
-        </View>
+
         <View style={{ ...styles.videosContainer, backgroundColor: 'white' }}>
-          <View
-            style={{
-              position: 'absolute',
-              zIndex: 1,
-              bottom: 10,
-              right: 10,
-              width: 100,
-              height: 200,
-              backgroundColor: 'black', //width: '100%', height: '100%'
-            }}>
-            <View style={{ flex: 1, backgroundColor: 'red' }}>
-              <TouchableOpacity
-                onPress={() => localStream._tracks[1]._switchCamera()}>
-                <View>
-                  <RTCView
-                    key={1}
-                    zOrder={0}
-                    objectFit="cover"
-                    style={{ ...styles.rtcView }}
-                    streamURL={localStream && localStream.toURL()}
-                  />
-                </View>
-              </TouchableOpacity>
-            </View>
-          </View>
           <ScrollView style={{ ...styles.scrollView }}>
-            <View
-              style={{
-                flex: 1,
-                width: '100%',
-                backgroundColor: 'blue',
-                justifyContent: 'center',
-                alignItems: 'center',
-              }}>
-              {remoteVideo}
-            </View>
+            {remoteVideo}
+            {localVideo}
           </ScrollView>
         </View>
       </SafeAreaView>
@@ -876,6 +831,7 @@ class App extends React.Component {
 const styles = StyleSheet.create({
   buttonsContainer: {
     flexDirection: 'row',
+    marginHorizontal: 5
   },
   button: {
     margin: 5,
@@ -900,20 +856,19 @@ const styles = StyleSheet.create({
   },
   scrollView: {
     flex: 1,
-    // flexDirection: 'row',
     backgroundColor: 'teal',
     padding: 15,
   },
   rtcViewRemote: {
-    width: dimensions.width - 30,
+    width: dimensions.width,
     height: 200, //dimensions.height / 2,
     backgroundColor: 'black',
   },
   input: {
     height: 40,
-    margin: 12,
     borderWidth: 1,
     padding: 10,
+    marginTop: 10
   },
 });
 
